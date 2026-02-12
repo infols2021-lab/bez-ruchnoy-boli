@@ -74,11 +74,11 @@ export default function Page() {
           {SERVICES.map((s, i) => (
             <motion.div
               key={s.id}
+              className="col6"
               initial={{ opacity: 0, y: 12 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-30px" }}
               transition={{ delay: i * 0.03 }}
-              style={{ gridColumn: "span 6" }}
             >
               <ServiceCard service={s} onClick={() => setSelected(s)} />
             </motion.div>
