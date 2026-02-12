@@ -56,9 +56,8 @@ export function ServiceModal({
     };
   }, [open]);
 
-  // Mobile: visible viewport height (prevents address-bar jump issues)
+  // Mobile: visible viewport height (fix address-bar / rotation jumps)
   const [vvHeight, setVvHeight] = useState<number | null>(null);
-
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -78,7 +77,7 @@ export function ServiceModal({
     };
   }, [open]);
 
-  // Measure header height (fixes landscape scroll)
+  // Measure header height (fix landscape scroll)
   const headerRef = useRef<HTMLDivElement | null>(null);
   const [headerH, setHeaderH] = useState(72);
 
@@ -93,7 +92,6 @@ export function ServiceModal({
     };
 
     update();
-
     const ro = new ResizeObserver(() => update());
     ro.observe(el);
 
@@ -107,22 +105,24 @@ export function ServiceModal({
     };
   }, [open, service?.id]);
 
-  // Compute sheet height on phone
+  // ====== PHONE INSETS (чтобы "чуть-чуть видно страницу")
+  const phoneInset = 10; // вот эти маленькие отступы по краям
+
   const sheetH = useMemo(() => {
     if (!isPhone) return null;
     if (typeof window === "undefined") return 560;
 
     const visibleH = vvHeight ?? window.innerHeight;
-    // almost full screen, but leave a tiny top gap
-    const h = Math.max(360, Math.min(visibleH - 8, Math.round(visibleH * 0.92)));
-    return h;
+    // Почти весь экран, но оставляем воздух + inset сверху/снизу
+    const maxH = Math.max(360, Math.min(visibleH - phoneInset * 2, Math.round(visibleH * 0.90)));
+    return maxH;
   }, [isPhone, vvHeight]);
 
   const backdropStyle: React.CSSProperties = useMemo(() => {
     if (isPhone) {
       return {
         alignItems: "flex-end",
-        padding: 0, // no side gaps on phone
+        padding: phoneInset, // ✅ видно страницу со всех сторон
       };
     }
     return {
@@ -134,12 +134,12 @@ export function ServiceModal({
   const modalStyle: React.CSSProperties = useMemo(() => {
     if (isPhone) {
       return {
-        width: "100vw",
-        maxWidth: "100vw",
+        width: `calc(100vw - ${phoneInset * 2}px)`,
+        maxWidth: `calc(100vw - ${phoneInset * 2}px)`,
         height: sheetH ?? 560,
         maxHeight: sheetH ?? 560,
         overflow: "hidden",
-        borderRadius: "22px 22px 0 0",
+        borderRadius: 22, // все углы круглые, приятнее, чем "в пол"
         willChange: "transform",
         boxShadow: "0 30px 90px rgba(10,18,34,.22)",
         display: "flex",
@@ -156,32 +156,42 @@ export function ServiceModal({
     };
   }, [isPhone, sheetH]);
 
+  // ✅ Главный фикс "листания влево/вправо":
+  // 1) запрещаем X-скролл
+  // 2) разрешаем переносы везде
   const scrollAreaStyle: React.CSSProperties = useMemo(() => {
     if (isPhone) {
       const h = (sheetH ?? 560) - headerH;
       return {
-        height: h > 120 ? h : 200,
-        overflow: "auto",
+        height: h > 140 ? h : 240,
+        overflowY: "auto",
+        overflowX: "hidden",
         WebkitOverflowScrolling: "touch",
         overscrollBehavior: "contain",
         minHeight: 0,
+        // переносы текста/длинных штук
+        overflowWrap: "anywhere",
+        wordBreak: "break-word",
       };
     }
     return {
-      overflow: "auto",
+      flex: 1,
+      overflowY: "auto",
+      overflowX: "hidden",
       WebkitOverflowScrolling: "touch",
       overscrollBehavior: "contain",
       minHeight: 0,
-      flex: 1,
+      overflowWrap: "anywhere",
+      wordBreak: "break-word",
     };
   }, [isPhone, sheetH, headerH]);
 
   const modalMotion = useMemo(() => {
     if (isPhone) {
       return {
-        initial: { y: 40, opacity: 0 },
+        initial: { y: 34, opacity: 0 },
         animate: { y: 0, opacity: 1 },
-        exit: { y: 40, opacity: 0 },
+        exit: { y: 34, opacity: 0 },
         transition: { type: "tween", duration: 0.18, ease: "easeOut" as const },
       };
     }
@@ -192,6 +202,17 @@ export function ServiceModal({
       transition: { type: "spring", stiffness: 260, damping: 24 },
     };
   }, [isPhone]);
+
+  // Styles to avoid any horizontal overflow from badges/buttons
+  const wrapInline: React.CSSProperties = useMemo(
+    () => ({
+      maxWidth: "100%",
+      whiteSpace: "normal",
+      overflowWrap: "anywhere",
+      wordBreak: "break-word",
+    }),
+    []
+  );
 
   return (
     <AnimatePresence>
@@ -229,13 +250,17 @@ export function ServiceModal({
                   : undefined
               }
             >
-              <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+              <div style={{ display: "flex", gap: 12, alignItems: "flex-start", minWidth: 0 }}>
                 <div className="iconWrap" aria-hidden>
                   <service.Icon size={20} />
                 </div>
-                <div>
-                  <h3 className="modalTitle">{service.title}</h3>
-                  <p className="modalSub">{service.short}</p>
+                <div style={{ minWidth: 0 }}>
+                  <h3 className="modalTitle" style={{ ...wrapInline, margin: 0 }}>
+                    {service.title}
+                  </h3>
+                  <p className="modalSub" style={wrapInline}>
+                    {service.short}
+                  </p>
                 </div>
               </div>
 
@@ -247,35 +272,49 @@ export function ServiceModal({
 
             <div style={scrollAreaStyle}>
               <div className="modalBody" style={isPhone ? { padding: 12 } : undefined}>
-                <div className="panel">
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                    <span className="badge" style={{ background: "rgba(255,255,255,.04)" }}>
+                <div className="panel" style={{ minWidth: 0 }}>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", minWidth: 0 }}>
+                    <span className="badge" style={{ ...wrapInline, background: "rgba(255,255,255,.04)" }}>
                       Цена: <strong style={{ color: "var(--text)" }}>{service.price}</strong>
                     </span>
-                    <span className="badge"> {service.delivery} </span>
-                    <span className="badge"> {service.support} </span>
+                    <span className="badge" style={wrapInline}>
+                      {service.delivery}
+                    </span>
+                    <span className="badge" style={wrapInline}>
+                      {service.support}
+                    </span>
                   </div>
 
                   <div className="hr" />
 
                   <div className="sectionTitle">Что входит</div>
-                  <ul className="list">
+                  <ul className="list" style={wrapInline}>
                     {service.includes.map((x) => (
-                      <li key={x}>{x}</li>
+                      <li key={x} style={wrapInline}>
+                        {x}
+                      </li>
                     ))}
                   </ul>
 
                   <div className="hr" />
 
                   <div className="sectionTitle">Подойдёт для</div>
-                  <ul className="list">
+                  <ul className="list" style={wrapInline}>
                     {service.goodFor.map((x) => (
-                      <li key={x}>{x}</li>
+                      <li key={x} style={wrapInline}>
+                        {x}
+                      </li>
                     ))}
                   </ul>
                 </div>
 
-                <div className="panel" style={isPhone ? { paddingBottom: "calc(12px + env(safe-area-inset-bottom))" } : undefined}>
+                <div
+                  className="panel"
+                  style={{
+                    minWidth: 0,
+                    paddingBottom: isPhone ? "calc(12px + env(safe-area-inset-bottom))" : undefined,
+                  }}
+                >
                   <div className="sectionTitle">Контакты</div>
                   <div className="small">Кнопки связи ниже — просто нажми на них.</div>
 
@@ -286,12 +325,18 @@ export function ServiceModal({
                       target="_blank"
                       rel="noreferrer"
                       onClick={() => copy(CONTACT.telegram)}
+                      style={{ ...wrapInline, textAlign: "left", justifyContent: "flex-start" }}
                     >
                       <Copy size={16} />
                       Telegram: <strong style={{ marginLeft: 4 }}>{CONTACT.telegram}</strong>
                     </a>
 
-                    <a className="btn" href={emailHref} onClick={() => copy(CONTACT.email)}>
+                    <a
+                      className="btn"
+                      href={emailHref}
+                      onClick={() => copy(CONTACT.email)}
+                      style={{ ...wrapInline, textAlign: "left", justifyContent: "flex-start" }}
+                    >
                       <Mail size={16} />
                       Email: <strong style={{ marginLeft: 4 }}>{CONTACT.email}</strong>
                     </a>
@@ -300,19 +345,21 @@ export function ServiceModal({
                   <div className="hr" />
 
                   <div className="sectionTitle">Технологии</div>
-                  <ul className="list">
+                  <ul className="list" style={wrapInline}>
                     {service.stack.map((x) => (
-                      <li key={x}>{x}</li>
+                      <li key={x} style={wrapInline}>
+                        {x}
+                      </li>
                     ))}
                   </ul>
 
                   <div className="hr" />
 
                   <div className="sectionTitle">Как работаем</div>
-                  <ul className="list">
-                    <li>Ты кидаешь пример таблицы/письма/сценария и что должно получиться.</li>
-                    <li>Я делаю MVP и показываю демо (скрин/видео/доступ).</li>
-                    <li>Довожу до результата и отдаю инструкцию.</li>
+                  <ul className="list" style={wrapInline}>
+                    <li style={wrapInline}>Ты кидаешь пример таблицы/письма/сценария и что должно получиться.</li>
+                    <li style={wrapInline}>Я делаю MVP и показываю демо (скрин/видео/доступ).</li>
+                    <li style={wrapInline}>Довожу до результата и отдаю инструкцию.</li>
                   </ul>
 
                   <div style={{ marginTop: 12 }} className="small">
