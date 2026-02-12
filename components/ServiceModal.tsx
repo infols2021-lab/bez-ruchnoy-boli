@@ -24,7 +24,7 @@ export function ServiceModal({
   const telegramHref = tgUser ? `https://t.me/${tgUser}` : "https://t.me/";
   const emailHref = `mailto:${CONTACT.email}`;
 
-  // Phone detection (stable, no first-render jump)
+  // Phone detection (stable)
   const [isPhone, setIsPhone] = useState(() => {
     if (typeof window === "undefined") return false;
     return window.matchMedia("(max-width: 520px)").matches;
@@ -38,7 +38,7 @@ export function ServiceModal({
     return () => mql.removeEventListener?.("change", onChange);
   }, []);
 
-  // Lock page scroll while modal open (prevents weird page dragging)
+  // Lock body scroll while open
   useLayoutEffect(() => {
     if (typeof document === "undefined") return;
     if (!open) return;
@@ -56,7 +56,7 @@ export function ServiceModal({
     };
   }, [open]);
 
-  // ===== Mobile: avoid address-bar jumps (visualViewport)
+  // Mobile: visible viewport height (prevents address-bar jump issues)
   const [vvHeight, setVvHeight] = useState<number | null>(null);
 
   useEffect(() => {
@@ -68,11 +68,7 @@ export function ServiceModal({
       return;
     }
 
-    const update = () => {
-      // vv.height is the реально видимая высота (без адресной строки)
-      setVvHeight(Math.round(vv.height));
-    };
-
+    const update = () => setVvHeight(Math.round(vv.height));
     update();
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
@@ -82,22 +78,51 @@ export function ServiceModal({
     };
   }, [open]);
 
-  // Focus/scroll to top inside sheet on open (so header always visible)
-  const bodyRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
+  // Measure header height (fixes landscape scroll)
+  const headerRef = useRef<HTMLDivElement | null>(null);
+  const [headerH, setHeaderH] = useState(72);
+
+  useLayoutEffect(() => {
     if (!open) return;
-    // next tick to ensure it exists
-    const t = setTimeout(() => {
-      bodyRef.current?.scrollTo({ top: 0, behavior: "auto" });
-    }, 0);
-    return () => clearTimeout(t);
+    const el = headerRef.current;
+    if (!el) return;
+
+    const update = () => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      if (h > 0) setHeaderH(h);
+    };
+
+    update();
+
+    const ro = new ResizeObserver(() => update());
+    ro.observe(el);
+
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+    };
   }, [open, service?.id]);
+
+  // Compute sheet height on phone
+  const sheetH = useMemo(() => {
+    if (!isPhone) return null;
+    if (typeof window === "undefined") return 560;
+
+    const visibleH = vvHeight ?? window.innerHeight;
+    // almost full screen, but leave a tiny top gap
+    const h = Math.max(360, Math.min(visibleH - 8, Math.round(visibleH * 0.92)));
+    return h;
+  }, [isPhone, vvHeight]);
 
   const backdropStyle: React.CSSProperties = useMemo(() => {
     if (isPhone) {
       return {
         alignItems: "flex-end",
-        padding: 0, // sheet упирается в края
+        padding: 0, // no side gaps on phone
       };
     }
     return {
@@ -108,19 +133,17 @@ export function ServiceModal({
 
   const modalStyle: React.CSSProperties = useMemo(() => {
     if (isPhone) {
-      const visibleH = vvHeight ?? window?.innerHeight ?? 700;
-      // Делаем “выдроченную” высоту: почти экран, но оставляем верхний воздух.
-      const sheetMax = Math.max(420, Math.min(visibleH - 12, Math.round(visibleH * 0.92)));
-
       return {
-        width: "100%",
-        maxHeight: sheetMax,
-        height: sheetMax, // фиксируем, чтобы не прыгало
-        overflow: "hidden", // скролл будет внутри body
+        width: "100vw",
+        maxWidth: "100vw",
+        height: sheetH ?? 560,
+        maxHeight: sheetH ?? 560,
+        overflow: "hidden",
         borderRadius: "22px 22px 0 0",
         willChange: "transform",
-        // чуть тени сильнее на мобилке, чтобы читалось как слой
         boxShadow: "0 30px 90px rgba(10,18,34,.22)",
+        display: "flex",
+        flexDirection: "column",
       };
     }
     return {
@@ -128,10 +151,31 @@ export function ServiceModal({
       maxHeight: "calc(100vh - 64px)",
       overflow: "hidden",
       willChange: "transform",
+      display: "flex",
+      flexDirection: "column",
     };
-  }, [isPhone, vvHeight]);
+  }, [isPhone, sheetH]);
 
-  // Animations: on phone = smooth bottom sheet, on desktop = popup
+  const scrollAreaStyle: React.CSSProperties = useMemo(() => {
+    if (isPhone) {
+      const h = (sheetH ?? 560) - headerH;
+      return {
+        height: h > 120 ? h : 200,
+        overflow: "auto",
+        WebkitOverflowScrolling: "touch",
+        overscrollBehavior: "contain",
+        minHeight: 0,
+      };
+    }
+    return {
+      overflow: "auto",
+      WebkitOverflowScrolling: "touch",
+      overscrollBehavior: "contain",
+      minHeight: 0,
+      flex: 1,
+    };
+  }, [isPhone, sheetH, headerH]);
+
   const modalMotion = useMemo(() => {
     if (isPhone) {
       return {
@@ -148,11 +192,6 @@ export function ServiceModal({
       transition: { type: "spring", stiffness: 260, damping: 24 },
     };
   }, [isPhone]);
-
-  // Prevent “rubber-band” scroll from pulling the page behind on mobile
-  const stopOverscroll: React.UIEventHandler<HTMLDivElement> = (e) => {
-    // no-op but keeps type; overscroll controlled via CSS too
-  };
 
   return (
     <AnimatePresence>
@@ -177,17 +216,15 @@ export function ServiceModal({
             exit={modalMotion.exit}
             transition={(modalMotion as any).transition}
           >
-            {/* Sticky header on phone so it never disappears */}
             <div
+              ref={headerRef}
               className="modalHeader"
               style={
                 isPhone
                   ? {
-                      position: "sticky",
-                      top: 0,
-                      zIndex: 5,
                       background: "rgba(255,255,255,.96)",
                       backdropFilter: "blur(10px)",
+                      borderBottom: "1px solid rgba(10,18,34,.12)",
                     }
                   : undefined
               }
@@ -208,18 +245,7 @@ export function ServiceModal({
               </button>
             </div>
 
-            {/* Scrollable body */}
-            <div
-              ref={bodyRef}
-              onScroll={stopOverscroll}
-              style={{
-                overflow: "auto",
-                WebkitOverflowScrolling: "touch",
-                overscrollBehavior: "contain",
-                // высота = вся модалка минус header
-                height: isPhone ? "calc(100% - 72px)" : "auto",
-              }}
-            >
+            <div style={scrollAreaStyle}>
               <div className="modalBody" style={isPhone ? { padding: 12 } : undefined}>
                 <div className="panel">
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
@@ -249,7 +275,7 @@ export function ServiceModal({
                   </ul>
                 </div>
 
-                <div className="panel">
+                <div className="panel" style={isPhone ? { paddingBottom: "calc(12px + env(safe-area-inset-bottom))" } : undefined}>
                   <div className="sectionTitle">Контакты</div>
                   <div className="small">Кнопки связи ниже — просто нажми на них.</div>
 
