@@ -17,8 +17,8 @@ export type Service = {
 };
 
 export const CONTACT = {
-  telegram: "@your_tg", // <-- поменяй на свой ник
-  email: "your@email.com" // <-- поменяй
+  telegram: "@skebobingg", // <-- поменяй на свой ник
+  email: "aleksejsolncev989@gmail.com" // <-- поменяй
 };
 
 export const SERVICES: Service[] = [
